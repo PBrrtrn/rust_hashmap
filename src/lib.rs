@@ -10,6 +10,49 @@ pub struct HashMap<K,V> {
 	items: usize,
 }
 
+pub struct OccupiedEntry<'a, K: 'a, V: 'a> {
+	entry: &'a mut (K, V),
+}
+
+pub struct VacantEntry<'a, K: 'a, V: 'a> {
+	key: K,
+	bucket: &'a mut Vec<(K, V)>,
+}
+
+pub enum Entry<'a, K, V> {
+	Occupied(OccupiedEntry<'a, K, V>),
+	Vacant(VacantEntry<'a, K, V>),
+}
+
+impl<'a, K: 'a, V: 'a> VacantEntry<'a, K, V> {
+	pub fn insert(self, value: V) -> &'a mut V {
+		self.bucket.push((self.key, value));
+		&mut self.bucket.last_mut().unwrap().1
+	}
+}
+
+impl<'a, K: 'a, V: 'a> Entry<'a, K, V> {
+	pub fn or_insert(self, value: V) -> &'a mut V {
+		match self {
+			Entry::Occupied(e) => &mut e.entry.1,
+			Entry::Vacant(e) => e.insert(value),
+		}
+	}
+
+	pub fn or_insert_with<F>(self, maker: F) -> &'a mut V
+	where F: FnOnce() -> V {
+		match self {
+			Entry::Occupied(e) => &mut e.entry.1,
+			Entry::Vacant(e) => e.insert(maker()),
+		}
+	}
+
+	pub fn or_default(self) -> &'a mut V
+	where V: Default {
+		self.or_insert_with(Default::default)
+	}
+}
+
 impl<K,V> HashMap<K,V> 	where K: Hash + Eq {
 	pub fn new() -> Self {
 		HashMap {
@@ -91,6 +134,23 @@ impl<K,V> HashMap<K,V> 	where K: Hash + Eq {
 	where K: Borrow<Q>,
 				Q: Hash + Eq + ?Sized	{
 		self.get(key).is_some()
+	}
+
+	pub fn entry<'a>(&'a mut self, key: K) -> Entry<'a, K, V> {
+		let bucket = self.bucket(&key);
+
+		for entry in &mut self.buckets[bucket] {
+			if entry.0 == key {
+				return Entry::Occupied(OccupiedEntry { 
+					entry: unsafe { &mut *(entry as *mut _) },
+				});
+			}
+		}
+
+		Entry::Vacant(VacantEntry {
+			key,
+			bucket: &mut self.buckets[bucket],
+		})
 	}
 }
 
